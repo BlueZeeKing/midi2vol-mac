@@ -1,12 +1,13 @@
-use midi2vol_mac::{midi::Connection, vol::Volume};
+use midi2vol_mac::{midi::new, vol::Volume};
 
+#[allow(unused_variables)]
 fn main() {
-    let connection = Connection::new(0);
     let volume = Volume::new(5.0);
 
-    for packet in connection.data.iter() {
-        if packet.channel == 1 || packet.channel == 2 {
-            volume.set((packet.val as f32 / 127.0 * 70.0).round() / 10.0)
-        }
-    }
+    let data = new(0, move |packet| {
+        volume.set((packet.val as f32 / 127.0 * 70.0).round() / 10.0);
+        println!("{}", (packet.val as f32 / 127.0 * 70.0).round() / 10.0)
+    });
+
+    loop {}
 }

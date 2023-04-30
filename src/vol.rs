@@ -1,38 +1,40 @@
 use std::{
     process::Command,
-    sync::{Arc, Mutex},
+    sync::{atomic::Ordering, Arc},
     thread,
     time::Duration,
 };
 
+use atomic_float::AtomicF32;
+
 pub struct Volume {
-    volume: Arc<Mutex<f32>>,
+    volume: Arc<AtomicF32>,
 }
 
 impl Volume {
     pub fn new(volume: f32) -> Self {
-        let volume = Arc::new(Mutex::new(volume));
+        let volume = Arc::new(AtomicF32::new(volume));
 
         let volume2 = volume.clone();
 
         thread::spawn(move || {
             let mut old = 11f32;
             loop {
-                let new_data = volume2.lock().unwrap();
+                let volume = volume2.load(Ordering::Relaxed);
 
-                if *new_data != old {
-                    Command::new("osascript")
-                        .arg("-e")
-                        .arg(format!("set Volume {}", new_data))
-                        .output()
-                        .unwrap();
+                if volume != old {
+                    let mut command = Command::new("osascript");
 
-                    old = *new_data;
+                    command.arg("-e").arg(format!("set Volume {}", volume));
+
+                    old = volume;
+
+                    command.output().unwrap();
                 }
 
-                drop(new_data);
+                // drop(new_data);
 
-                thread::sleep(Duration::from_secs(1))
+                thread::sleep(Duration::from_millis(100))
             }
         });
 
@@ -40,7 +42,7 @@ impl Volume {
     }
 
     pub fn set(&self, volume: f32) {
-        *self.volume.lock().unwrap() = volume
+        self.volume.swap(volume, Ordering::Relaxed);
     }
 }
 
