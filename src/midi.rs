@@ -6,54 +6,82 @@ const MIDI_CHANMASK: u8 = 0x0F;
 
 pub struct Connection {
     client: Client,
+    port: Result<InputPort, Error>,
+
     source_index: usize,
-    port: Option<InputPort>,
     pub volume: Volume,
 }
 
+#[derive(Debug)]
+pub enum Error {
+    NotCreatedYet,
+    SourceNotFound,
+    ClientCannotBeCreated,
+    SourceNotConnected,
+    NotEnoughBytes,
+    NotCCPacket,
+    InputPortCannotBeCreated,
+}
+
 impl Connection {
-    pub fn new(source_index: usize, volume: Volume) -> Self {
+    pub fn new(source_index: usize, volume: Volume) -> Result<Self, Error> {
         let mut new = Self {
-            client: Client::new("Midi Vol Client").unwrap(),
+            client: match Client::new("Midi Vol Client") {
+                Ok(client) => client,
+                Err(_) => return Err(Error::ClientCannotBeCreated),
+            },
             source_index,
-            port: None,
+            port: Err(Error::NotCreatedYet),
             volume,
         };
 
-        new.create_callback();
+        new.port = new.create_callback();
 
-        new
+        Ok(new)
     }
 
-    pub fn create_callback(&mut self) {
-        self.client = Client::new("Midi Vol Client").unwrap(); // TODO: Error handling
-        let source = Source::from_index(self.source_index).unwrap();
+    pub fn create_callback(&self) -> Result<InputPort, Error> {
+        let source = match Source::from_index(self.source_index) {
+            Some(source) => source,
+            None => return Err(Error::SourceNotFound),
+        };
 
         let volume = self.volume.clone();
 
         let callback =
             move |packet: CCPacket| volume.set((packet.val as f32 / 127.0 * 70.0).round() / 10.0);
 
-        self.port = Some(
-            self.client
-                .input_port("Midi Vol Port", move |packets| {
-                    for packet in packets
-                        .iter()
-                        .filter_map(|packet| CCPacket::try_from(packet).ok())
-                    {
-                        callback(packet)
-                    }
-                })
-                .unwrap(),
-        );
+        let port = match self.client.input_port("Midi Vol Port", move |packets| {
+            for packet in packets
+                .iter()
+                .filter_map(|packet| CCPacket::try_from(packet).ok())
+            {
+                callback(packet)
+            }
+        }) {
+            Ok(port) => port,
+            Err(_) => return Err(Error::InputPortCannotBeCreated),
+        };
 
-        self.port.as_ref().unwrap().connect_source(&source).unwrap();
+        match port.connect_source(&source) {
+            Err(_) => return Err(Error::SourceNotConnected),
+            _ => (),
+        };
+
+        Ok(port)
     }
 
     pub fn set_source_index(&mut self, source_index: usize) {
         self.source_index = source_index;
 
-        self.create_callback();
+        self.port = self.create_callback();
+    }
+
+    pub fn get_error(&self) -> Option<&Error> {
+        match &self.port {
+            Ok(_) => None,
+            Err(err) => Some(err),
+        }
     }
 }
 
@@ -90,9 +118,4 @@ impl TryFrom<&Packet> for CCPacket {
     fn try_from(value: &Packet) -> Result<Self, Self::Error> {
         Self::try_from(value.data())
     }
-}
-
-pub enum Error {
-    NotEnoughBytes,
-    NotCCPacket,
 }
