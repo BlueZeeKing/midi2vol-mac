@@ -8,7 +8,7 @@ pub struct Connection {
     client: Client,
     source_index: usize,
     port: Option<InputPort>,
-    volume: Volume,
+    pub volume: Volume,
 }
 
 impl Connection {
@@ -25,7 +25,7 @@ impl Connection {
         new
     }
 
-    fn create_callback(&mut self) {
+    pub fn create_callback(&mut self) {
         self.client = Client::new("Midi Vol Client").unwrap(); // TODO: Error handling
         let source = Source::from_index(self.source_index).unwrap();
 
