@@ -40,7 +40,11 @@ impl Connection {
         Ok(new)
     }
 
-    pub fn create_callback(&self) -> Result<InputPort, Error> {
+    pub fn set_port(&mut self, port: Result<InputPort, Error>) {
+        self.port = port;
+    }
+
+    pub fn create_callback(&mut self) -> Result<InputPort, Error> {
         let source = match Source::from_index(self.source_index) {
             Some(source) => source,
             None => return Err(Error::SourceNotFound),
