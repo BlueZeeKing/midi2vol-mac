@@ -8,6 +8,9 @@ pub struct Connection {
     client: Client,
     port: Result<InputPort, Error>,
 
+    channel: u8,
+    cc_num: u8,
+
     source_index: usize,
     pub volume: Volume,
 }
@@ -33,6 +36,8 @@ impl Connection {
             source_index,
             port: Err(Error::NotCreatedYet),
             volume,
+            channel: 2,
+            cc_num: 0x3E,
         };
 
         new.port = new.create_callback();
@@ -51,16 +56,17 @@ impl Connection {
         };
 
         let volume = self.volume.clone();
-
-        let callback =
-            move |packet: CCPacket| volume.set((packet.val as f32 / 127.0 * 70.0).round() / 10.0);
+        let channel = self.channel;
+        let cc_num = self.cc_num;
 
         let port = match self.client.input_port("Midi Vol Port", move |packets| {
             for packet in packets
                 .iter()
                 .filter_map(|packet| CCPacket::try_from(packet).ok())
             {
-                callback(packet)
+                if packet.channel == channel && packet.cc_num == cc_num {
+                    volume.set((packet.val as f32 / 127.0 * 70.0).round() / 10.0)
+                }
             }
         }) {
             Ok(port) => port,
@@ -86,6 +92,24 @@ impl Connection {
             Ok(_) => None,
             Err(err) => Some(err),
         }
+    }
+
+    pub fn get_channel(&self) -> u8 {
+        self.channel
+    }
+
+    pub fn get_cc(&self) -> u8 {
+        self.cc_num
+    }
+
+    pub fn set_channel(&mut self, channel: u8) {
+        self.channel = channel;
+        self.port = self.create_callback();
+    }
+
+    pub fn set_cc(&mut self, cc_num: u8) {
+        self.cc_num = cc_num;
+        self.port = self.create_callback();
     }
 }
 
