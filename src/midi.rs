@@ -1,21 +1,23 @@
 use coremidi::{Client, InputPort, Packet, Source};
 
+use crate::vol::Volume;
+
 const MIDI_CHANMASK: u8 = 0x0F;
 
-pub struct Connection<F: FnMut(CCPacket) + Send + 'static + Clone> {
+pub struct Connection {
     client: Client,
-    callback: F,
     source_index: usize,
     port: Option<InputPort>,
+    volume: Volume,
 }
 
-impl<F: FnMut(CCPacket) + Send + 'static + Clone> Connection<F> {
-    pub fn new(source_index: usize, callback: F) -> Self {
+impl Connection {
+    pub fn new(source_index: usize, volume: Volume) -> Self {
         let mut new = Self {
             client: Client::new("Midi Vol Client").unwrap(),
-            callback,
             source_index,
             port: None,
+            volume,
         };
 
         new.create_callback();
@@ -27,7 +29,10 @@ impl<F: FnMut(CCPacket) + Send + 'static + Clone> Connection<F> {
         self.client = Client::new("Midi Vol Client").unwrap(); // TODO: Error handling
         let source = Source::from_index(self.source_index).unwrap();
 
-        let mut callback = self.callback.clone();
+        let volume = self.volume.clone();
+
+        let callback =
+            move |packet: CCPacket| volume.set((packet.val as f32 / 127.0 * 70.0).round() / 10.0);
 
         self.port = Some(
             self.client
