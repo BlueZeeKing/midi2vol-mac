@@ -83,8 +83,6 @@ impl Connection {
 
     pub fn set_source_index(&mut self, source_index: usize) {
         self.source_index = source_index;
-
-        self.port = self.create_callback();
     }
 
     pub fn get_error(&self) -> Option<&Error> {
