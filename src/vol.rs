@@ -54,6 +54,10 @@ impl Volume {
         self.sleep_time
             .swap(sleep_time.as_millis() as u64, Ordering::Relaxed);
     }
+
+    pub fn get_sleep_time(&self) -> Duration {
+        Duration::from_millis(self.sleep_time.load(Ordering::Relaxed))
+    }
 }
 
 impl Default for Volume {
