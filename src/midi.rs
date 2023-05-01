@@ -2,27 +2,54 @@ use coremidi::{Client, InputPort, Packet, Source};
 
 const MIDI_CHANMASK: u8 = 0x0F;
 
-pub fn new<F: FnMut(CCPacket) + Send + 'static>(
+pub struct Connection<F: FnMut(CCPacket) + Send + 'static + Clone> {
+    client: Client,
+    callback: F,
     source_index: usize,
-    mut callback: F,
-) -> (Client, InputPort) {
-    let client = Client::new("Midi Vol Client").unwrap(); // TODO: Error handling
-    let source = Source::from_index(source_index).unwrap();
+    port: Option<InputPort>,
+}
 
-    let port = client
-        .input_port("Midi Vol Port", move |packets| {
-            for packet in packets
-                .iter()
-                .filter_map(|packet| CCPacket::try_from(packet).ok())
-            {
-                callback(packet)
-            }
-        })
-        .unwrap();
+impl<F: FnMut(CCPacket) + Send + 'static + Clone> Connection<F> {
+    pub fn new(source_index: usize, callback: F) -> Self {
+        let mut new = Self {
+            client: Client::new("Midi Vol Client").unwrap(),
+            callback,
+            source_index,
+            port: None,
+        };
 
-    port.connect_source(&source).unwrap();
+        new.create_callback();
 
-    (client, port)
+        new
+    }
+
+    fn create_callback(&mut self) {
+        self.client = Client::new("Midi Vol Client").unwrap(); // TODO: Error handling
+        let source = Source::from_index(self.source_index).unwrap();
+
+        let mut callback = self.callback.clone();
+
+        self.port = Some(
+            self.client
+                .input_port("Midi Vol Port", move |packets| {
+                    for packet in packets
+                        .iter()
+                        .filter_map(|packet| CCPacket::try_from(packet).ok())
+                    {
+                        callback(packet)
+                    }
+                })
+                .unwrap(),
+        );
+
+        self.port.as_ref().unwrap().connect_source(&source).unwrap();
+    }
+
+    pub fn set_source_index(&mut self, source_index: usize) {
+        self.source_index = source_index;
+
+        self.create_callback();
+    }
 }
 
 #[derive(Debug)]
