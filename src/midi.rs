@@ -24,6 +24,7 @@ pub enum Error {
     NotEnoughBytes,
     NotCCPacket,
     InputPortCannotBeCreated,
+    UserStopped,
 }
 
 impl Connection {
