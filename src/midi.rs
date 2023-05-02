@@ -15,7 +15,7 @@ pub struct Connection {
     pub volume: Volume,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum Error {
     NotCreatedYet,
     SourceNotFound,
