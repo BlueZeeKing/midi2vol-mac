@@ -37,7 +37,7 @@ impl Connection {
             source_index,
             port: Err(Error::NotCreatedYet),
             volume,
-            channel: 2,
+            channel: 1,
             cc_num: 0x3E,
         };
 
@@ -65,6 +65,7 @@ impl Connection {
                 .iter()
                 .filter_map(|packet| CCPacket::try_from(packet).ok())
             {
+                dbg!(&packet);
                 if packet.channel == channel && packet.cc_num == cc_num {
                     volume.set((packet.val as f32 / 127.0 * 70.0).round() / 10.0)
                 }
