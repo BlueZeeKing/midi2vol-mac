@@ -8,3 +8,4 @@ edition = "2021"
 [dependencies]
 atomic_float = "0.1.0"
 coremidi = "0.7.0"
+oneshot = "0.1.5"

@@ -1,118 +1,119 @@
-use coremidi::{Client, InputPort, Packet, Source};
+use std::{
+    sync::mpsc::{self, Receiver, Sender},
+    thread::{self, JoinHandle},
+};
 
-use crate::vol::Volume;
+use coremidi::{Client, Packet, Source};
 
 const MIDI_CHANMASK: u8 = 0x0F;
 
 pub struct Connection {
-    client: Client,
-    port: Result<InputPort, Error>,
-
-    channel: u8,
-    cc_num: u8,
-
     source_index: usize,
-    pub volume: Volume,
+    thread: JoinHandle<()>,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Error {
-    NotCreatedYet,
     SourceNotFound,
     ClientCannotBeCreated,
     SourceNotConnected,
     NotEnoughBytes,
     NotCCPacket,
     InputPortCannotBeCreated,
-    UserStopped,
+    ConnectionThreadFailure,
 }
+
+pub type PacketReceiver = Receiver<Result<CCPacket, Error>>;
 
 impl Connection {
-    pub fn new(source_index: usize, volume: Volume) -> Result<Self, Error> {
-        let mut new = Self {
-            client: match Client::new("Midi Vol Client") {
-                Ok(client) => client,
-                Err(_) => return Err(Error::ClientCannotBeCreated),
+    pub fn new(source_index: usize) -> Result<(Self, PacketReceiver), Error> {
+        let (tx, rx) = mpsc::channel::<Result<CCPacket, Error>>();
+
+        Ok((
+            Self {
+                source_index,
+                thread: Self::get_thread(tx, source_index),
             },
-            source_index,
-            port: Err(Error::NotCreatedYet),
-            volume,
-            channel: 1,
-            cc_num: 0x3E,
-        };
-
-        new.port = new.create_callback();
-
-        Ok(new)
+            rx,
+        ))
     }
 
-    pub fn set_port(&mut self, port: Result<InputPort, Error>) {
-        self.port = port;
-    }
+    fn get_thread(tx: Sender<Result<CCPacket, Error>>, source_index: usize) -> JoinHandle<()> {
+        thread::spawn(move || {
+            let client = match Client::new("Midi Vol Client") {
+                Ok(client) => client,
+                Err(_) => {
+                    tx.send(Err(Error::ClientCannotBeCreated)).unwrap();
+                    return;
+                }
+            };
 
-    pub fn create_callback(&mut self) -> Result<InputPort, Error> {
-        let source = match Source::from_index(self.source_index) {
-            Some(source) => source,
-            None => return Err(Error::SourceNotFound),
-        };
+            let tx1 = tx.clone();
 
-        let volume = self.volume.clone();
-        let channel = self.channel;
-        let cc_num = self.cc_num;
+            let port = match client.input_port("Midi 2 Vol Port", move |packets| {
+                for packet in packets
+                    .iter()
+                    .filter_map(|packet| CCPacket::try_from(packet).ok())
+                {
+                    tx1.send(Ok(packet)).unwrap();
+                }
+            }) {
+                Ok(port) => port,
+                Err(_) => {
+                    tx.send(Err(Error::InputPortCannotBeCreated)).unwrap();
+                    return;
+                }
+            };
 
-        let port = match self.client.input_port("Midi Vol Port", move |packets| {
-            for packet in packets
-                .iter()
-                .filter_map(|packet| CCPacket::try_from(packet).ok())
-            {
-                if packet.channel == channel && packet.cc_num == cc_num {
-                    volume.set((packet.val as f32 / 127.0 * 70.0).round() / 10.0)
+            match port.connect_source(match &Source::from_index(source_index) {
+                Some(source) => source,
+                None => {
+                    tx.send(Err(Error::SourceNotFound)).unwrap();
+                    return;
+                }
+            }) {
+                Ok(_) => (),
+                Err(_) => {
+                    tx.send(Err(Error::SourceNotConnected)).unwrap();
+                    return;
                 }
             }
-        }) {
-            Ok(port) => port,
-            Err(_) => return Err(Error::InputPortCannotBeCreated),
-        };
 
-        match port.connect_source(&source) {
-            Err(_) => return Err(Error::SourceNotConnected),
-            _ => (),
-        };
+            thread::park();
 
-        Ok(port)
+            dbg!("stopping");
+        })
     }
 
-    pub fn set_source_index(&mut self, source_index: usize) {
+    fn update(&mut self) -> PacketReceiver {
+        self.thread.thread().unpark();
+
+        let (tx, rx) = mpsc::channel::<Result<CCPacket, Error>>();
+
+        self.thread = Self::get_thread(tx, self.source_index);
+
+        rx
+    }
+
+    pub fn set_source_index(&mut self, source_index: usize) -> PacketReceiver {
         self.source_index = source_index;
+        self.update()
     }
 
-    pub fn get_error(&self) -> Option<&Error> {
-        match &self.port {
-            Ok(_) => None,
-            Err(err) => Some(err),
-        }
+    pub fn get_source_index(&self) -> usize {
+        self.source_index
     }
 
-    pub fn get_channel(&self) -> u8 {
-        self.channel
+    pub fn stop(&self) {
+        self.thread.thread().unpark();
     }
 
-    pub fn get_cc(&self) -> u8 {
-        self.cc_num
-    }
-
-    pub fn set_channel(&mut self, channel: u8) {
-        self.channel = channel;
-        self.port = self.create_callback();
-    }
-
-    pub fn set_cc(&mut self, cc_num: u8) {
-        self.cc_num = cc_num;
-        self.port = self.create_callback();
+    pub fn start(&mut self) -> PacketReceiver {
+        self.update()
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CCPacket {
     pub channel: u8,
     pub cc_num: u8,
