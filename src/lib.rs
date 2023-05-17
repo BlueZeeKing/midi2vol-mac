@@ -43,7 +43,7 @@ impl MIDI2Vol {
 
         let thread = thread::spawn(move || {
             let volume = Volume::new(0.0, Duration::from_millis(100));
-            let (mut connection, receiver) = Connection::new(0).unwrap();
+            let (mut connection, receiver) = Connection::new(0);
 
             let mut cc_num: u8 = 0x3E;
             let mut channel: u8 = 1;
@@ -150,5 +150,7 @@ fn spawn_thread(receiver: PacketReceiver, tx1: Sender<Command>) {
         for packet in receiver.iter() {
             tx1.send(Command::Packet(packet)).unwrap();
         }
+
+        dbg!("stopping")
     });
 }

@@ -26,16 +26,16 @@ pub enum Error {
 pub type PacketReceiver = Receiver<Result<CCPacket, Error>>;
 
 impl Connection {
-    pub fn new(source_index: usize) -> Result<(Self, PacketReceiver), Error> {
+    pub fn new(source_index: usize) -> (Self, PacketReceiver) {
         let (tx, rx) = mpsc::channel::<Result<CCPacket, Error>>();
 
-        Ok((
+        (
             Self {
                 source_index,
                 thread: Self::get_thread(tx, source_index),
             },
             rx,
-        ))
+        )
     }
 
     fn get_thread(tx: Sender<Result<CCPacket, Error>>, source_index: usize) -> JoinHandle<()> {
