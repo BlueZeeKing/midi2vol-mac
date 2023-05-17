@@ -127,6 +127,7 @@ impl MIDI2Vol {
     }
 }
 
+#[derive(Debug)]
 pub enum ChannelError {
     Send(mpsc::SendError<Command>),
     Receive(oneshot::RecvTimeoutError),
